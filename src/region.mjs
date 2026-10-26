@@ -1,0 +1,19 @@
+export const BOUNDS = [-119.08, 48.98, -116.5, 50.5];
+export const CORRIDORS = [
+  { id:'all',name:'The whole region',short:'All corridors',roads:'West Kootenay + Boundary',bounds:BOUNDS },
+  { id:'west',name:'Castlegar ↔ Midway',short:'Boundary / Hwy 3',roads:'Grand Forks · Greenwood · Midway · Paulson',bounds:[-119.08,49,-117.55,49.45],highways:['3'] },
+  { id:'south',name:'Trail ↔ Salmo',short:'Trail / Salmo',roads:'Rossland · Fruitvale · Hwy 3B / 22 / 6',bounds:[-117.95,48.98,-117.1,49.33],highways:['3B','22','22A','6','3'] },
+  { id:'central',name:'Castlegar ↔ Nelson',short:'Castlegar / Nelson',roads:'Glade · Playmor Junction · Hwy 3A',bounds:[-117.8,49.25,-117.1,49.6],highways:['3A','6','3'] },
+  { id:'east',name:'Nelson ↔ Salmo ↔ Creston',short:'Ymir / Kootenay Pass',roads:'Ymir · Bombi · Kootenay Pass · Hwy 6 / 3',bounds:[-117.75,48.98,-116.5,49.55],highways:['3','6'] },
+  { id:'lake',name:'Nelson ↔ Kaslo',short:'Kootenay Lake',roads:'Balfour · Kootenay Bay · Hwy 3A / 31',bounds:[-117.38,49.42,-116.65,50.15],highways:['3A','31'] },
+  { id:'north',name:'Kaslo ↔ Nakusp',short:'Kaslo / Nakusp',roads:'Retallack · New Denver · Hwy 31A / 6 / 23',bounds:[-118.28,49.7,-116.7,50.5],highways:['31A','6','23','31'] },
+];
+export const TOWNS=[['Midway',-118.989,49.01],['Greenwood',-118.677,49.091],['Castlegar',-117.659,49.325],['Nelson',-117.294,49.493],['Trail',-117.71,49.096],['Salmo',-117.278,49.194],['Grand Forks',-118.441,49.033],['Kaslo',-116.912,49.914],['Nakusp',-117.802,50.239],['Ymir',-117.217,49.28],['New Denver',-117.374,49.991],['Rossland',-117.803,49.078],['Creston',-116.514,49.096],['Balfour',-116.965,49.624]];
+export function inBounds(p,b=BOUNDS){return Array.isArray(p)&&Number.isFinite(p[0])&&Number.isFinite(p[1])&&p[0]>=b[0]&&p[0]<=b[2]&&p[1]>=b[1]&&p[1]<=b[3];}
+function segmentIntersects(a,b,r){let lo=0,hi=1;const dx=b[0]-a[0],dy=b[1]-a[1];for(const [p,q] of [[-dx,a[0]-r[0]],[dx,r[2]-a[0]],[-dy,a[1]-r[1]],[dy,r[3]-a[1]]]){if(p===0){if(q<0)return false;}else{const t=q/p;if(p<0)lo=Math.max(lo,t);else hi=Math.min(hi,t);if(lo>hi)return false;}}return true;}
+export function geometryIntersects(g,b=BOUNDS){if(!g)return false;if(g.type==='Point')return inBounds(g.coordinates,b);if(g.type==='MultiPoint')return g.coordinates.some(p=>inBounds(p,b));if(g.type==='LineString')return g.coordinates.some((p,i)=>inBounds(p,b)||(i>0&&segmentIntersects(g.coordinates[i-1],p,b)));if(g.type==='MultiLineString')return g.coordinates.some(coordinates=>geometryIntersects({type:'LineString',coordinates},b));return false;}
+export function pointOf(g){if(!g)return null;if(g.type==='Point')return g.coordinates;if(g.type==='LineString')return g.coordinates[Math.floor(g.coordinates.length/2)];if(g.type==='MultiLineString')return pointOf({type:'LineString',coordinates:g.coordinates[0]});return null;}
+export function eventKind(e){if(e.roads?.some(r=>r.state==='CLOSED'))return 'Closure';if(e.event_type==='INCIDENT')return 'Incident';if(e.event_type==='ROAD_CONDITION')return 'Road condition';if(e.event_type==='CONSTRUCTION')return 'Roadwork';return (e.event_type||'Notice').replaceAll('_',' ').toLowerCase();}
+export function eventRank(e){return e.kind==='Closure'?0:e.severity==='MAJOR'?1:e.kind==='Incident'?2:e.kind==='Road condition'?3:4;}
+export function matchesCorridor(item,c){if(!geometryIntersects(item.geometry||{type:'Point',coordinates:item.coordinates},c.bounds))return false;if(!c.highways)return true;const highways=item.highway?[item.highway]:(item.roads||[]).map(r=>r.name.replace(/^Highway\s+/i,''));return !highways.length||highways.some(h=>c.highways.includes(h));}
+export function hasEnded(e,now=Date.now()){const a=e.schedule?.intervals;return Array.isArray(a)&&a.length>0&&a.every(s=>{const end=s.split('/')[1];return end&&/(Z|[+-]\d\d:\d\d)$/.test(end)&&Number.isFinite(Date.parse(end))&&Date.parse(end)<now;});}

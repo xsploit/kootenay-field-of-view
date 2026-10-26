@@ -1,0 +1,13 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {selectFeaturesForView,updateLocalGis} from '../src/local-gis.mjs';
+import {featureTitle,featureRows} from '../src/feature-cards.mjs';
+const point=(x,y)=>({type:'Feature',geometry:{type:'Point',coordinates:[x,y]},properties:{ADDRESS:'123 TEST ROAD'}});
+test('detail display clips outside features and enforces a visible-feature budget',()=>{const j=selectFeaturesForView([point(1,1),point(1.5,1.5),point(2,2),point(20,20)],[0,0,3,3],{maxFeatures:2});assert.equal(j.features.length,2);assert.equal(j.partial,true);assert.equal(j.vertices,2);});
+test('one complex feature cannot exceed the geometry vertex budget',()=>{const line={type:'Feature',properties:{},geometry:{type:'LineString',coordinates:Array.from({length:10},(_,i)=>[i/10,i/10])}};const j=selectFeaturesForView([line,point(.5,.5)],[0,0,1,1],{maxVertices:5});assert.equal(j.features.length,1);assert.equal(j.features[0].geometry.type,'Point');assert.equal(j.partial,true);});
+test('address hover titles and domain values retain publisher meaning',()=>{assert.equal(featureTitle({FULL_ADDRESS:'1030 HIGHWAY 3B'},'Address point'),'1030 HIGHWAY 3B');assert.equal(featureTitle({ADDRESS:'617 DEVON ST'}),'617 DEVON ST');assert.equal(featureTitle({},'Parcel outline'),'Parcel outline');assert.deepEqual(featureRows({fieldAliases:{status:'Road status'},domains:{status:{2:'Closed'}}},{status:2,OBJECTID:42,__index:1}),[['Road status','Closed']]);});
+test('eight unchanged GIS renders upload geometry once, and disabling releases it',async()=>{const oldFetch=globalThis.fetch,oldDocument=globalThis.document;let fetched=0,uploads=0;const sources=new Map(),layers=new Map();globalThis.document={querySelector:()=>null};globalThis.fetch=async()=>{fetched++;return Response.json({features:[point(1,1),point(20,20)]});};
+ const map={getZoom:()=>14,getBounds:()=>({getWest:()=>0,getSouth:()=>0,getEast:()=>2,getNorth:()=>2}),getSource:id=>sources.get(id),getLayer:id=>layers.get(id),addSource(id){sources.set(id,{setData(j){uploads++;assert.ok(j.features.length<=1);}});},addLayer(l){layers.set(l.id,l);},setLayoutProperty(){}};
+ const d={id:'test-addresses',name:'Addresses',tiles:[{bounds:[0,0,2,2],url:'test-addresses.json'}],minzoom:14};
+ try{for(let i=0;i<8;i++)await updateLocalGis(map,[d],true,new Set(),{register(){}});assert.equal(fetched,1);assert.equal(uploads,1);await updateLocalGis(map,[d],false,new Set(),{register(){}});assert.equal(uploads,2);}finally{globalThis.fetch=oldFetch;if(oldDocument===undefined)delete globalThis.document;else globalThis.document=oldDocument;}
+});

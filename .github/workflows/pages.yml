@@ -1,0 +1,49 @@
+name: Refresh regional feeds and deploy Pages
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test scripts/region.test.mjs scripts/geo-sources.test.mjs scripts/camera-refresh.test.mjs scripts/map-budget.test.mjs
+      - run: node scripts/refresh.mjs
+      - run: node scripts/refresh-catalog.mjs
+      - name: Preserve last successful feed snapshots
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add data
+          if ! git diff --cached --quiet; then
+            git commit -m 'Refresh regional source snapshots [skip ci]'
+            git push
+          fi
+      - name: Assemble static site
+        run: |
+          mkdir -p _site
+          cp index.html style.css explorer.css app.mjs favicon.svg google-3d.html google-3d.mjs cameras.html cameras.mjs cameras.css feature-cards.css _site/
+          cp -r src vendor data _site/
+          touch _site/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - uses: actions/deploy-pages@v4
+        id: deployment
